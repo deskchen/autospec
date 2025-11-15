@@ -1,0 +1,8 @@
+# AutoSpec Requirements
+
+# CLI interface
+click>=8.1.0
+
+# Type hints support for older Python versions (if needed)
+typing-extensions>=4.5.0
+
