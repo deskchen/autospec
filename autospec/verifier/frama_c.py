@@ -24,11 +24,14 @@ class FramaCVerifier:
         
         try:
             # Run Frama-C with WP plugin
+            # Note: We don't require termination proofs since benchmarks may not include loop variants
             cmd = [
                 self.frama_c_cmd,
+                "-generated-spec-custom", "terminates:skip",
                 "-wp",
                 f"-wp-timeout={FRAMA_C_WP_TIMEOUT}",
                 "-wp-prover=alt-ergo",
+                "-warn-unsigned-overflow",  # Warn about potential overflows
                 str(c_file)
             ]
             

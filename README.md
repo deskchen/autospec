@@ -98,24 +98,11 @@ git clone https://github.com/Frama-C/Frama-C-snapshot.git frama-c-examples
 **With Docker:**
 
 ```bash
-docker run -it --name autospec -v $(pwd):/workspace autospec:dev /bin/bash
-```
+docker run -dit --name autospec -v $(pwd):/workspace autospec:dev
 
-**Local:**
+docker exec -it autospec /bin/bash
 
-```bash
-python3 -m autospec.cli.main verify benchmarks/frama_c_problems/array_max.c --verbose
-```
-
-### With Verbose Output
-
-```bash
-# Docker
-docker run -v $(pwd):/workspace autospec \
-  python3 -m autospec.cli.main verify benchmarks/frama_c_problems/array_max.c --verbose
-
-# Local
-python3 -m autospec.cli.main verify benchmarks/frama_c_problems/array_max.c --verbose
+python3 -m autospec.cli.main verify benchmarks/frama-c-problems/loops/1.c --verbose
 ```
 
 ### Custom Timeout
@@ -131,46 +118,30 @@ python3 -m autospec.cli.main --help
 python3 -m autospec.cli.main verify --help
 ```
 
-## Running Tests
+**Benchmark Suites:**
 
-**With Docker:**
-
-```bash
-docker run -v $(pwd):/workspace autospec python3 -m unittest discover tests
-```
-
-**Local:**
+AutoSpec includes comprehensive benchmark suites for evaluation:
 
 ```bash
-python3 -m unittest discover tests
+# Run all benchmarks (frama-c-problems + x509-parser)
+./scripts/run_all_benchmarks.sh
+
+# Run only frama-c-problems (~51 programs)
+./scripts/run_all_benchmarks.sh -o frama-c
+
+# Skip x509-parser for faster testing
+./scripts/run_all_benchmarks.sh -s
+
+# Test specific category
+./scripts/run_frama_c_problems.sh loops
+./scripts/run_frama_c_problems.sh arrays_and_loops -v
+
+# Test x509-parser only
+./scripts/run_x509_parser.sh
 ```
 
-Run specific test:
+See [benchmarks/README.md](benchmarks/README.md) for detailed documentation.
 
-```bash
-python3 -m unittest tests.test_verifier_integration.TestFramaCIntegration.test_array_max_verification
-```
-
-## Development Workflow
-
-### Interactive Docker Shell
-
-```bash
-docker run -it -v $(pwd):/workspace autospec /bin/bash
-```
-
-Inside the container, you can:
-
-```bash
-# Run verification
-python3 -m autospec.cli.main verify benchmarks/frama_c_problems/array_max.c
-
-# Run Frama-C directly
-frama-c -wp benchmarks/frama_c_problems/array_max.c
-
-# Run tests
-python3 -m unittest discover tests
-```
 
 ### Adding New C Programs
 
@@ -233,7 +204,7 @@ Prover couldn't determine validity. May need stronger loop invariants or differe
 
 **Docker:** Rebuild the image:
 ```bash
-docker build --no-cache -t autospec .
+docker build --no-cache -t autospec:dev .
 ```
 
 **Local:** Ensure Frama-C is in PATH:
@@ -253,29 +224,11 @@ python3 -m autospec.cli.main verify file.c --timeout 300
 
 **Docker:** Make sure to mount the current directory:
 ```bash
-docker run -v $(pwd):/workspace autospec ...
+docker run -v $(pwd):/workspace autospec:dev ...
 ```
 
 **Local:** Run from project root and ensure Python can find the package:
 ```bash
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 ```
-
-## Future Development
-
-- [ ] LLM integration for automatic specification generation
-- [ ] Iterative refinement loop
-- [ ] Support for more proof strategies
-- [ ] Call graph analysis
-- [ ] Loop decomposition
-- [ ] Batch verification of benchmark suites
-- [ ] Results visualization
-
-
-## References
-
-- [Frama-C Documentation](https://frama-c.com/)
-- [ACSL Specification Language](https://frama-c.com/acsl.html)
-- [Frama-C WP Plugin](https://frama-c.com/wp.html)
-- [SyGuS Competition](https://sygus.org/)
 

@@ -1,2 +1,0 @@
-"""AutoSpec test suite"""
-

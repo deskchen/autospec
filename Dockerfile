@@ -22,17 +22,9 @@ COPY requirements.txt /workspace/requirements.txt
 # Install Python dependencies
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Copy application code
-COPY autospec/ /workspace/autospec/
-COPY benchmarks/ /workspace/benchmarks/
-COPY tests/ /workspace/tests/
-
 # Set up environment to use OPAM packages
 ENV PATH="/home/opam/.opam/default/bin:${PATH}"
 ENV OPAM_SWITCH_PREFIX="/home/opam/.opam/default"
 
 # Verify Frama-C is available
 RUN eval $(opam env) && frama-c -version
-
-# Default command: show help
-CMD ["bash", "-c", "eval $(opam env) && python3 -m autospec.cli.main --help"]
