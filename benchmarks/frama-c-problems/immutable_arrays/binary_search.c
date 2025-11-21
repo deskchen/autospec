@@ -2,6 +2,9 @@
     requires n > 0;
     requires \valid_read(a+(0..n-1));
     requires \forall integer k, l; 0 <= k <= l < n ==> a[k] <= a[l];
+    
+    // FIX 1: Add assigns clause
+    assigns \nothing;
 
     ensures \result >= -1 && \result < n;
 
@@ -10,12 +13,12 @@
         ensures a[\result] == x ;
 
     behavior not_present:
-        assumes \exists integer k ; 0 <= k < n && a[k] != x ;
+        // FIX 2: Use \forall to make it truly disjoint from 'present'
+        assumes \forall integer k ; 0 <= k < n ==> a[k] != x ;
         ensures \result == -1;
 
     disjoint behaviors;
     complete behaviors;
-
 */
 int binarysearch(int* a, int x, int n) {
 
@@ -24,9 +27,14 @@ int binarysearch(int* a, int x, int n) {
     int p;
 
     /*@
-        loop invariant 0 <= low <= n  && 0 <= high <= n;
-        loop invariant \forall integer k; (0 <= k < n) && (a[k] == x) ==> (low <= k < high);
-        loop assigns low, high;
+        // FIX 3: Allow low to be -1
+        loop invariant -1 <= low <= n  && 0 <= high <= n;
+        
+        // Recommended: Use strict inequality < for this algorithm
+        loop invariant \forall integer k; (0 <= k < n) && (a[k] == x) ==> (low < k < high);
+        
+        loop assigns low, high, p;
+        loop variant high - low; 
     */
     while (low+1 < high) {
         p = (low + high) / 2;

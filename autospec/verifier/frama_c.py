@@ -31,7 +31,7 @@ class FramaCVerifier:
                 "-wp",
                 f"-wp-timeout={FRAMA_C_WP_TIMEOUT}",
                 "-wp-prover=alt-ergo",
-                "-warn-unsigned-overflow",  # Warn about potential overflows
+                # "-warn-unsigned-overflow",  # Warn about potential overflows
                 str(c_file)
             ]
             

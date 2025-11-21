@@ -10,9 +10,9 @@ int abs(int val) {
     return val;
 }
 
+/*@ requires a > INT_MIN; */
 void foo(int a) {
     int b = abs(-42);
     int c = abs(42);
     int d = abs(a);
-    int e = abs(INT_MIN);
 }

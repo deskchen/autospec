@@ -1,9 +1,14 @@
 #include <limits.h>
 /*@
     requires \valid_read(a) && \valid_read(b) && \valid_read(r);
-    requires \separated(a, b, r);
+    
+    // FIX: Remove separation. It is safe to read from the same address multiple times.
+    // requires \separated(a, b, r);
+
+    // Preconditions to prevent overflow
     requires *a + *b + *r <= INT_MAX;
     requires *a + *b + *r >= INT_MIN;
+    
     assigns \nothing;
     ensures \result == *a + *b + *r;
 */
@@ -17,11 +22,12 @@ int main() {
     int r = 12;
     int x;
 
-    x = add(&a, &b, &r) ;
+    x = add(&a, &b, &r);
     //@ assert x == a + b + r;
-    //@ assert x == 68 ;
+    //@ assert x == 68;
 
-    x = add(&a, &a, &a) ;
+    // This now passes because we allow aliasing
+    x = add(&a, &a, &a);
     //@ assert x == a + a + a;
-    //@ assert x == 72 ;
+    //@ assert x == 72;
 }

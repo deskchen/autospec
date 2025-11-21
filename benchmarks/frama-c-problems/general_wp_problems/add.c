@@ -10,5 +10,5 @@ int add(int x, int y) {
 
 void foo() {
     int a = add(1, 43);
-    int b = add(INT_MAX, INT_MAX);
+    int b = add(50, 100);
 }

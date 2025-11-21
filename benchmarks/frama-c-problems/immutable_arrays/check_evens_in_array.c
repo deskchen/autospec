@@ -1,8 +1,6 @@
-// Program to find if the array consists of even elements only
-
 /*@
     requires n > 0;
-    requires \valid_read(a+(0..(n-1)));
+    requires \valid_read(a+(0..n-1));
     assigns \nothing;
 
     behavior all_even:
@@ -10,7 +8,9 @@
         ensures \result == 1;
 
     behavior all_not_even:
-        assumes \exists  integer k; 0 <= k < n ==> a[k]%2 != 0;
+        // FIX 1: Use '&&' instead of '==>' for \exists
+        // We need a k that is valid AND odd.
+        assumes \exists  integer k; 0 <= k < n && a[k]%2 != 0;
         ensures \result == 0;
 
     disjoint behaviors;
@@ -22,6 +22,8 @@ int areElementsEven(int *a, int n) {
         loop invariant 0 <= p <= n;
         loop invariant \forall integer k; 0 <= k < p ==> a[k]%2 == 0;
         loop assigns p; 
+        // FIX 2: Prove termination
+        loop variant n - p;
     */
     while (p < n) {
         if (a[p]%2 != 0) {

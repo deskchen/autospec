@@ -1,15 +1,36 @@
 /*@
     requires n > 0;
-    requires \valid_read(a + (0..n-1));
+    // FIX 1: Must be writable (\valid), not just readable
+    requires \valid(a + (0..n-1));
 
-    ensures \forall integer k; 0 <= k < n/2 ==> a[k] == a[n-k-1];
+    assigns a[0..n-1];
+
+    // FIX 2: Correct Postcondition for Reverse
+    // "The element at k is equal to the OLD element at n-1-k"
+    ensures \forall integer k; 0 <= k < n ==> a[k] == \at(a[n-1-k], Pre);
 */
 void reverse(int *a, int n) {
     int i = 0;
     int j = n-1;
+    
     /*@
-        loop invariant i <= n/2;
-        loop invariant j >= n/2;
+        loop invariant 0 <= i <= n/2;
+        
+        // FIX 3: Link j to i
+        loop invariant j == n - 1 - i;
+
+        // FIX 4: Describe the partial state of the array
+        // A. The bottom part (0..i) has been swapped
+        loop invariant \forall integer k; 0 <= k < i ==> a[k] == \at(a[n-1-k], Pre);
+
+        // B. The top part (j+1..n) has been swapped
+        loop invariant \forall integer k; j < k < n ==> a[k] == \at(a[n-1-k], Pre);
+
+        // C. The middle part (i..j) is untouched (same as Pre)
+        loop invariant \forall integer k; i <= k <= j ==> a[k] == \at(a[k], Pre);
+
+        loop assigns i, j, a[0..n-1];
+        loop variant j - i;
     */
     while (i < n/2) {
         int temp = a[i];
