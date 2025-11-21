@@ -11,7 +11,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-BENCHMARKS_DIR="$PROJECT_ROOT/benchmarks/frama-c-problems"
+BENCHMARKS_DIR="$PROJECT_ROOT/benchmarks/frama-c-problems/ground-truth"
 
 # Color codes for output
 GREEN='\033[0;32m'
@@ -94,15 +94,16 @@ verify_file() {
     exit_code=$?
     
     # Parse result
-    if echo "$output" | grep -q "VALID:"; then
-        echo -e "${GREEN}VALID${NC}"
-        ((PASSED++))
+    # Check INVALID first since "VALID:" is a substring of "INVALID:"
+    if echo "$output" | grep -q "INVALID:"; then
+        echo -e "${RED}INVALID${NC}"
+        ((FAILED++))
     elif echo "$output" | grep -q "TIMEOUT:"; then
         echo -e "${YELLOW}TIMEOUT${NC}"
         ((TIMEOUT++))
-    elif echo "$output" | grep -q "INVALID:"; then
-        echo -e "${RED}INVALID${NC}"
-        ((FAILED++))
+    elif echo "$output" | grep -q "VALID:"; then
+        echo -e "${GREEN}VALID${NC}"
+        ((PASSED++))
     else
         echo -e "${YELLOW}UNKNOWN${NC}"
         ((UNKNOWN++))

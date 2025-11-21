@@ -6,19 +6,24 @@
         absolute_value.c    [TIMEOUT]
         add.c               [TIMEOUT]
         ani.c               [TIMEOUT]
+        gcd.c               [INVALID]
+        power.c             [INVALID]
         triangle_angles.c   [TIMEOUT]
         triangle_sides.c    [TIMEOUT]
         wp1.c               [TIMEOUT]
     [FAILED] immutable_arrays/
+        array_sum.c             [INVALID]
         binary_search.c         [TIMEOUT]
         check_evens_in_arrays.c [TIMEOUT]
         occurences_of_x.c       [TIMEOUT]
         search_2.c              [TIMEOUT]
     [FAILED] loops/
-        4.c         [TIMEOUT]
-        mult.c      [TIMEOUT]
-        sum_even.c  [TIMEOUT]
+        4.c             [TIMEOUT]
+        mult.c          [TIMEOUT]
+        sum_digits.c    [INVALID]
+        sum_even.c      [TIMEOUT]
     [FAILED] miscellaneous/
+        max_of_2.c              [INVALID]
         array_max_advanced.c    [TIMEOUT]
     [FAILED] more_arrays/
         reverse_array.c         [TIMEOUT]

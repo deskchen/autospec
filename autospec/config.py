@@ -4,8 +4,8 @@ from pathlib import Path
 
 # Frama-C settings
 FRAMA_C_COMMAND = os.getenv("FRAMA_C_COMMAND", "frama-c")
-FRAMA_C_TIMEOUT = int(os.getenv("FRAMA_C_TIMEOUT", "60"))  # seconds
-FRAMA_C_WP_TIMEOUT = int(os.getenv("FRAMA_C_WP_TIMEOUT", "30"))  # seconds per proof
+FRAMA_C_TIMEOUT = int(os.getenv("FRAMA_C_TIMEOUT", "10"))  # seconds
+FRAMA_C_WP_TIMEOUT = int(os.getenv("FRAMA_C_WP_TIMEOUT", "10"))  # seconds per proof
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
