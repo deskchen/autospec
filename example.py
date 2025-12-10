@@ -1,11 +1,127 @@
 import sys
+
+from autospec.decomposition import ExtendedCallGraphBuilder
+
+
+if __name__ == "__main__":
+    c_code = """
+    #include <stdio.h>
+
+    void leaf_function() {
+        printf("I am a leaf\\n");
+    }
+
+    void helper() {
+        leaf_function();
+    }
+
+    void process_data() {
+        for (int i = 0; i < 5; i++) {
+            helper();
+        }
+    }
+
+    int main() {
+        int x = 0;
+        while (x < 3) {
+            process_data();
+            x++;
+        }
+        return 0;
+    }
+    """
+
+    print("--- Initializing Builder starting at 'main' (Line 18) ---")
+
+    try:
+        builder = ExtendedCallGraphBuilder(c_code, start_line=18)
+
+        step_count = 1
+        print("--- Traversing Bottom-Up ---")
+        while True:
+            node = builder.next()
+            if node is None:
+                break
+
+            print(f"\n[Step {step_count}] Visiting: {node}")
+
+            annotated = builder.annotate_node(node)
+            print(annotated)  # Uncomment to see full source
+
+            step_count += 1
+
+        print("\n--- Final Edges ---")
+        for src, dst in builder.graph_edges:
+            print(f"{src.name} -> {dst.name}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+import sys
+
+from autospec.decomposition import ExtendedCallGraphBuilder
+
+
+if __name__ == "__main__":
+    c_code = """
+    #include <stdio.h>
+
+    void leaf_function() {
+        printf("I am a leaf\\n");
+    }
+
+    void helper() {
+        leaf_function();
+    }
+
+    void process_data() {
+        for (int i = 0; i < 5; i++) {
+            helper();
+        }
+    }
+
+    int main() {
+        int x = 0;
+        while (x < 3) {
+            process_data();
+            x++;
+        }
+        return 0;
+    }
+    """
+
+    print("--- Initializing Builder starting at 'main' (Line 18) ---")
+
+    try:
+        builder = ExtendedCallGraphBuilder(c_code, start_line=18)
+
+        step_count = 1
+        print("--- Traversing Bottom-Up ---")
+        while True:
+            node = builder.next()
+            if node is None:
+                break
+
+            print(f"\n[Step {step_count}] Visiting: {node}")
+
+            annotated = builder.annotate_node(node)
+            print(annotated)  # Uncomment to see full source
+
+            step_count += 1
+
+        print("\n--- Final Edges ---")
+        for src, dst in builder.graph_edges:
+            print(f"{src.name} -> {dst.name}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+import sys
 import clang.cindex
 from collections import deque
 
 # Configure clang path if necessary. 
 # If you get a "library not found" error, uncomment and adjust the line below:
 # make sure that the python binding version matches the llvm version. 
-clang.cindex.Config.set_library_file('/usr/lib/llvm-18/lib/libclang-18.so.18')
+clang.cindex.Config.set_library_file('/usr/lib/llvm-14/lib/libclang.so')
 
 class GraphNode:
     """
