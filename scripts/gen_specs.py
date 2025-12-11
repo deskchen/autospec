@@ -70,6 +70,28 @@ Example output for a loop node:
 */
 """
 
+# Correction prompt for failed verification runs (spec-only changes).
+CORRECTION_PROMPT = """You are given a C file that already contains ACSL specifications.
+
+The file failed verification with Frama-C/WP. You must correct ONLY the ACSL specifications
+to make the file verify. Do NOT change any C code outside ACSL comments. You may add, edit,
+or remove ACSL annotations as needed.
+
+Inputs you receive:
+- The full C file with its current ACSL annotations.
+- The Frama-C/WP output (stdout/stderr) from the failed verification.
+
+Your task:
+- Fix the ACSL specs so that verification succeeds.
+- Keep the C code (non-ACSL) unchanged.
+- Return the ENTIRE corrected C file (code + ACSL) ready to feed back to the verifier.
+
+Output format:
+- Output only the full corrected C file, nothing else. No <think>, no explanations, no Markdown fences.
+"""
+
+MAX_CORRECTION_ATTEMPTS = 3
+
 
 def discover_c_files(root: Path):
     return sorted(p for p in root.rglob("*.c") if p.is_file())
@@ -101,6 +123,15 @@ def insert_spec(src: str, node: GraphNode, spec_block: str) -> str:
 
 def build_prompt(code_with_marker: str) -> str:
     return f"{FEWSHOT_PROMPT}\n\nHere is the C file to annotate:\n```c\n{code_with_marker}\n``` /nothink"
+
+
+def build_correction_prompt(file_text: str, verify_output: str) -> str:
+    return (
+        f"{CORRECTION_PROMPT}\n\n"
+        f"--- C file (with current ACSL) ---\n{file_text}\n"
+        f"--- Frama-C/WP output ---\n{verify_output}\n"
+        "Remember: only adjust ACSL, keep C code unchanged. Return the full corrected C file. /nothink"
+    )
 
 
 def call_llm(prompt: str, endpoint: str, model: str, temperature: float, max_tokens: int, api_key: Optional[str]) -> str:
@@ -168,6 +199,24 @@ def extract_spec_block(text: str) -> Optional[str]:
     return None
 
 
+def extract_corrected_code(text: str) -> Optional[str]:
+    """
+    For correction runs, prefer a raw full C file output. If the model wrapped
+    it in ```c fences, extract the inner block; otherwise return stripped text.
+    """
+    fenced = re.search(r"```c\n([\s\S]*?)\n```", text)
+    if fenced:
+        candidate = fenced.group(1).strip()
+        return candidate if candidate else None
+    stripped = text.strip()
+    return stripped or None
+
+
+def strip_think_wrappers(text: str) -> str:
+    """Remove leading <think>...</think> blocks that models may emit."""
+    return re.sub(r"(?s)^\s*<think>.*?</think>\s*", "", text, count=1)
+
+
 def annotate_file(path: Path, args) -> Path:
     src = path.read_text()
     api_key = os.getenv("OPENAI_API_KEY")
@@ -190,7 +239,9 @@ def annotate_file(path: Path, args) -> Path:
         llm_raw = call_llm(prompt, args.endpoint, args.model, args.temperature, args.max_tokens, api_key)
         spec_block = extract_spec_block(llm_raw)
         if not spec_block:
-            raise RuntimeError(f"LLM did not return a spec for {path} / node {target.name}")
+            # Skip this node (and thus this file) if the LLM did not produce a usable spec.
+            print(f"[WARN] No ACSL spec returned for {path} / node {target.name}; skipping file.")
+            return None
 
         src = insert_spec(src, target, spec_block)
 
@@ -215,6 +266,47 @@ def run_verify(out_path: Path, timeout: int):
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
+def attempt_corrections(out_path: Path, verify_output: str, args) -> bool:
+    """
+    Try to repair ACSL specs using the correction prompt. Returns True if verification
+    eventually succeeds, False otherwise.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    current_src = out_path.read_text()
+
+    for attempt in range(1, MAX_CORRECTION_ATTEMPTS + 1):
+        print(f"[RETRY] Verification failed for {out_path}, attempt {attempt}/{MAX_CORRECTION_ATTEMPTS}")
+        corr_prompt = build_correction_prompt(current_src, verify_output)
+        # Log full prompt and inputs for diagnostics.
+        print("[DEBUG] Correction prompt (full):")
+        print(corr_prompt)
+        corr_raw = call_llm(corr_prompt, args.endpoint, args.model, args.temperature, args.max_tokens, api_key)
+        print("[DEBUG] Correction LLM raw output:")
+        print(corr_raw)
+        corrected = extract_corrected_code(corr_raw)
+        if not corrected:
+            print(f"[WARN] Correction attempt {attempt} returned no usable code; aborting retries for {out_path}.")
+            return False
+
+        corrected_clean = strip_think_wrappers(corrected)
+        out_path.write_text(corrected_clean)
+        current_src = corrected_clean
+
+        result = run_verify(out_path, args.verify_timeout)
+        print(f" -> retry verify exit={result.returncode}")
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+
+        if result.returncode == 0:
+            return True
+
+        verify_output = (result.stdout or "") + (result.stderr or "")
+
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate ACSL specs via vLLM (OpenAI-compatible).")
     parser.add_argument("--input-dir", type=Path, default=Path("benchmarks/frama-c-problems/test-inputs/arrays_and_loops"))
@@ -234,7 +326,16 @@ def main():
     print(f"Found {len(files)} C files under {args.input_dir}")
     for path in files:
         print(f"\n[Annotate] {path}")
-        out_path = annotate_file(path, args)
+        try:
+            out_path = annotate_file(path, args)
+        except Exception as exc:
+            print(f"[ERROR] Failed to annotate {path}: {exc}")
+            continue
+
+        if out_path is None:
+            # Logged in annotate_file; move to next file.
+            continue
+
         print(f" -> wrote {out_path}")
         if args.verify:
             result = run_verify(out_path, args.verify_timeout)
@@ -243,6 +344,15 @@ def main():
                 print(result.stdout)
             if result.stderr:
                 print(result.stderr)
+
+            if result.returncode != 0:
+                verify_output = (result.stdout or "") + (result.stderr or "")
+                print(f"[INFO] Entering correction loop for {out_path}")
+                success = attempt_corrections(out_path, verify_output, args)
+                if success:
+                    print(f"[INFO] Verification succeeded after corrections: {out_path}")
+                else:
+                    print(f"[WARN] Verification still failing after corrections: {out_path}")
 
 
 if __name__ == "__main__":

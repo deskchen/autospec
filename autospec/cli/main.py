@@ -1,4 +1,5 @@
 """AutoSpec CLI entry point"""
+import sys
 import click
 from pathlib import Path
 from ..pipeline.autospec_runner import AutoSpecRunner
@@ -33,8 +34,10 @@ def verify(c_file: Path, timeout: int, verbose: bool):
     # Exit with appropriate code
     if verdict.is_valid():
         click.echo(click.style("✓ Verification successful!", fg="green"))
+        sys.exit(0)
     else:
         click.echo(click.style("✗ Verification failed or incomplete", fg="red"))
+        sys.exit(1)
 
 
 if __name__ == '__main__':
