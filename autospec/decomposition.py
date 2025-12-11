@@ -1,9 +1,54 @@
 import clang.cindex
+import os
 from collections import deque
 from typing import List, Optional, Tuple
 
-# Optional: set the clang library path here if needed.
-clang.cindex.Config.set_library_file('/usr/lib/llvm-14/lib/libclang.so')
+
+def _find_clang_library():
+    """
+    Attempts to find the clang library by trying common installation paths.
+    Falls back to letting clang find it automatically if none are found.
+    """
+    # Common paths to try (in order of preference)
+    common_paths = [
+        '/usr/lib/llvm-14/lib/libclang.so',
+        '/usr/lib/llvm-18/lib/libclang.so',
+        '/usr/lib/llvm-16/lib/libclang.so',
+        '/usr/lib/llvm-15/lib/libclang.so',
+        '/usr/lib/llvm-13/lib/libclang.so',
+        '/usr/lib/x86_64-linux-gnu/libclang.so',
+        '/usr/lib/x86_64-linux-gnu/libclang-18.so.18',
+        '/usr/lib/x86_64-linux-gnu/libclang-14.so.1',
+        '/usr/local/lib/libclang.so',
+    ]
+    
+    # Also check environment variable
+    env_path = os.getenv('LIBCLANG_PATH')
+    if env_path and os.path.exists(env_path):
+        try:
+            clang.cindex.Config.set_library_file(env_path)
+            return
+        except Exception:
+            pass
+    
+    # Try common paths
+    for path in common_paths:
+        if os.path.exists(path):
+            try:
+                clang.cindex.Config.set_library_file(path)
+                return
+            except Exception:
+                continue
+    
+    # If no path found, let clang try to find it automatically
+    # This will use the default search mechanism
+    pass
+
+
+# Configure clang path if necessary.
+# If you get a "library not found" error, uncomment and adjust the line below:
+# make sure that the python binding version matches the llvm version.
+_find_clang_library()
 
 
 class GraphNode:

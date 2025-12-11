@@ -201,7 +201,44 @@ def annotate_file(path: Path, args) -> Path:
     return out_path
 
 
+def setup_opam_environment():
+    """
+    Set up OPAM environment to ensure frama-c is in PATH.
+    Equivalent to: eval $(opam env)
+    Note: Even though PATH is set in Dockerfile, we need to run opam env to actually load it.
+    """
+    # Run 'opam env' and apply its output to current process environment
+    try:
+        result = subprocess.run(
+            ["opam", "env"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            env=os.environ.copy()  # Pass current environment to subprocess
+        )
+        if result.returncode == 0:
+            # Parse opam env output (format: VAR='value'; export VAR;)
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                # Handle: VAR='value'; export VAR;
+                # Match pattern like: PATH='/home/opam/.opam/4.14/bin:$PATH'; export PATH;
+                match = re.match(r"(\w+)='([^']+)';\s*export\s+\w+;", line)
+                if match:
+                    var_name, var_value = match.groups()
+                    # Expand $VAR references using current environment
+                    var_value = os.path.expandvars(var_value)
+                    os.environ[var_name] = var_value
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # opam command not found or timed out, that's okay
+        # PATH is already set in Dockerfile, so frama-c should still be available
+        pass
+
+
 def run_verify(out_path: Path, timeout: int):
+    # Ensure opam environment is set up before verification
+    setup_opam_environment()
+    
     cmd = [
         "python3",
         "-m",
@@ -216,6 +253,9 @@ def run_verify(out_path: Path, timeout: int):
 
 
 def main():
+    # Set up OPAM environment early to ensure frama-c is available
+    setup_opam_environment()
+    
     parser = argparse.ArgumentParser(description="Generate ACSL specs via vLLM (OpenAI-compatible).")
     parser.add_argument("--input-dir", type=Path, default=Path("benchmarks/frama-c-problems/test-inputs/arrays_and_loops"))
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/annotated"))
