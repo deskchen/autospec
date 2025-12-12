@@ -40,7 +40,137 @@ docker exec -it autospec /bin/bash
 
 This will run verification on benchmarks in `benchmarks/frama-c-problems/ground-truth` to verify that Frama-C and AutoSpec are working correctly.
 
-## Usage
+## Automated Spec Generation with vLLM
+
+This is the core end-to-end workflow: **LLM → insert ACSL → verify**.
+
+### 1) Start an OpenAI-compatible vLLM server
+
+In a terminal **inside Docker** (or on the host if you prefer), start the model server:
+
+```bash
+python3 -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen3-32B \
+  --port 8000 \
+  --dtype auto
+```
+
+> [!NOTE]
+> - If you run vLLM inside Docker, make sure the container has GPU access (e.g., started with `--gpus all`).
+> - `scripts/gen_specs.py` talks to an OpenAI-compatible Chat Completions endpoint.
+> - If your endpoint requires auth, set `OPENAI_API_KEY` (it will be sent as a Bearer token).
+
+### 2) Run generation (and verify)
+
+In a second terminal **inside Docker**:
+
+```bash
+PYTHONPATH=/workspace python3 scripts/gen_specs.py \
+  --input-dir benchmarks/frama-c-problems/test-inputs \
+  --output-dir outputs/annotated \
+  --model Qwen/Qwen3-32B \
+  --endpoint http://localhost:8000/v1/chat/completions \
+  --verify
+```
+
+Key details:
+- The script recursively processes all `.c` files under `--input-dir`.
+- It annotates one function/loop at a time by inserting a returned `/*@ ... */` block immediately before the target node.
+- With `--verify`, it calls the AutoSpec verifier on each produced file.
+- If verification fails, it automatically enters a **final feedback correction loop** (up to 3 attempts) where Frama-C/WP output is fed back to the LLM to repair **ACSL only**.
+
+### 3) Check results (verify an outputs directory)
+
+After generation, you can verify (or re-verify) everything under an output directory:
+
+```bash
+# From repo root (inside Docker)
+PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated
+
+# Example: verify a different outputs folder
+PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated_correction_6
+```
+
+> [!WARNING]
+> If you see `Output directory not found: outputs/...`, double-check:
+> - the **folder name** (e.g., `annotated_correction_6` has an underscore), and
+> - your **current working directory** (relative paths are resolved from where you run the script).
+
+## Results
+
+Below is a side-by-side comparison on **`benchmarks/frama-c-problems/test-inputs` (51 programs)**:
+
+| Metric | AutoSpec (initial) | AutoSpec + final feedback loop |
+|---|---:|---:|
+| Programs passed | 21 | 24 |
+| Programs failed | 30 | 27 |
+| Pass rate | 41.2% | 47.1% |
+| Visual | <progress value="21" max="51"></progress> | <progress value="24" max="51"></progress> |
+
+**What is the “final feedback loop”?** After a failed verification run, we feed the Frama-C/WP error output back into the LLM and ask it to **repair ACSL only** (no C code changes), then re-verify.
+
+### Per-program comparison (51 programs)
+
+<details>
+<summary>Click to expand</summary>
+
+| Program | AutoSpec | + Final feedback |
+|---|:---:|:---:|
+| `arrays_and_loops/1.c` | PASS | FAIL |
+| `arrays_and_loops/2.c` | FAIL | PASS |
+| `arrays_and_loops/3.c` | PASS | PASS |
+| `arrays_and_loops/4.c` | FAIL | FAIL |
+| `arrays_and_loops/5.c` | FAIL | FAIL |
+| `general_wp_problems/absolute_value.c` | PASS | PASS |
+| `general_wp_problems/add.c` | PASS | PASS |
+| `general_wp_problems/ani.c` | FAIL | FAIL |
+| `general_wp_problems/diff.c` | PASS | PASS |
+| `general_wp_problems/gcd.c` | PASS | PASS |
+| `general_wp_problems/max_of_2.c` | PASS | PASS |
+| `general_wp_problems/power.c` | FAIL | FAIL |
+| `general_wp_problems/simple_interest.c` | PASS | PASS |
+| `general_wp_problems/swap.c` | PASS | PASS |
+| `general_wp_problems/triangle_angles.c` | FAIL | FAIL |
+| `general_wp_problems/triangle_sides.c` | PASS | PASS |
+| `general_wp_problems/wp1.c` | FAIL | FAIL |
+| `immutable_arrays/array_sum.c` | FAIL | FAIL |
+| `immutable_arrays/binary_search.c` | FAIL | FAIL |
+| `immutable_arrays/check_evens_in_array.c` | PASS | PASS |
+| `immutable_arrays/max.c` | FAIL | PASS |
+| `immutable_arrays/occurences_of_x.c` | FAIL | FAIL |
+| `immutable_arrays/sample.c` | FAIL | FAIL |
+| `immutable_arrays/search.c` | PASS | PASS |
+| `immutable_arrays/search_2.c` | PASS | PASS |
+| `loops/1.c` | FAIL | FAIL |
+| `loops/2.c` | FAIL | FAIL |
+| `loops/3.c` | PASS | FAIL |
+| `loops/4.c` | FAIL | PASS |
+| `loops/fact.c` | FAIL | FAIL |
+| `loops/mult.c` | FAIL | FAIL |
+| `loops/sum_digits.c` | FAIL | FAIL |
+| `loops/sum_even.c` | FAIL | FAIL |
+| `miscellaneous/array_find.c` | PASS | PASS |
+| `miscellaneous/array_max_advanced.c` | FAIL | FAIL |
+| `miscellaneous/array_swap.c` | PASS | PASS |
+| `miscellaneous/increment_arr.c` | FAIL | FAIL |
+| `miscellaneous/max_of_2.c` | PASS | PASS |
+| `more_arrays/equal_arrays.c` | FAIL | PASS |
+| `more_arrays/replace_evens.c` | FAIL | FAIL |
+| `more_arrays/reverse_array.c` | FAIL | FAIL |
+| `mutable_arrays/array_double.c` | FAIL | FAIL |
+| `mutable_arrays/bubble_sort.c` | FAIL | FAIL |
+| `pointers/add_pointers.c` | FAIL | FAIL |
+| `pointers/add_pointers_3_vars.c` | FAIL | FAIL |
+| `pointers/div_rem.c` | PASS | PASS |
+| `pointers/incr_a_by_b.c` | FAIL | PASS |
+| `pointers/max_pointers.c` | PASS | PASS |
+| `pointers/order_3.c` | FAIL | FAIL |
+| `pointers/reset_1st.c` | PASS | PASS |
+| `pointers/swap.c` | PASS | PASS |
+
+</details>
+
+## How to Run Verification Manually (Frama-C / WP)
 
 ### Running Ground Truth Benchmarks
 
@@ -148,121 +278,6 @@ export FRAMA_C_WP_TIMEOUT=20
 export VERBOSE=true
 ```
 
-## Automated Spec Generation with vLLM
-
-This is the core end-to-end workflow: **LLM → insert ACSL → verify**.
-
-### 1) Start an OpenAI-compatible vLLM server
-
-In a terminal **inside Docker** (or on the host if you prefer), start the model server:
-
-```bash
-python3 -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen3-32B \
-  --port 8000 \
-  --dtype auto
-```
-
-> [!NOTE]
-> - `scripts/gen_specs.py` talks to an OpenAI-compatible Chat Completions endpoint.
-
-### 2) Run generation (and verify)
-
-In a second terminal **inside Docker**:
-
-```bash
-PYTHONPATH=/workspace python3 scripts/gen_specs.py \
-  --input-dir benchmarks/frama-c-problems/test-inputs \
-  --output-dir outputs/annotated \
-  --model Qwen/Qwen3-32B \
-  --endpoint http://localhost:8000/v1/chat/completions \
-  --verify
-```
-
-Key details:
-- The script recursively processes all `.c` files under `--input-dir`.
-- It annotates one function/loop at a time by inserting a returned `/*@ ... */` block immediately before the target node.
-- With `--verify`, it calls the AutoSpec verifier on each produced file.
-- If verification fails, it automatically enters a **final feedback correction loop** (up to 3 attempts) where Frama-C/WP output is fed back to the LLM to repair **ACSL only**.
-
-
-## Results
-
-Below is a side-by-side comparison on **`benchmarks/frama-c-problems/test-inputs` (51 programs)**:
-
-| Metric | AutoSpec (initial) | AutoSpec + final feedback loop |
-|---|---:|---:|
-| Programs passed | 21 | 24 |
-| Programs failed | 30 | 27 |
-| Pass rate | 41.2% | 47.1% |
-| Visual | <progress value="21" max="51"></progress> | <progress value="24" max="51"></progress> |
-
-**What is the “final feedback loop”?** After a failed verification run, we feed the Frama-C/WP error output back into the LLM and ask it to **repair ACSL only** (no C code changes), then re-verify.
-
-> [!NOTE]
-> If you want a complete per-program listing, run `scripts/verify_all_outputs.py` and save the output (e.g., `... > results.txt`).
-
-### Per-program comparison (51 programs)
-
-<details>
-<summary>Click to expand</summary>
-
-| Program | AutoSpec | + Final feedback |
-|---|:---:|:---:|
-| `arrays_and_loops/1.c` | PASS | FAIL |
-| `arrays_and_loops/2.c` | FAIL | PASS |
-| `arrays_and_loops/3.c` | PASS | PASS |
-| `arrays_and_loops/4.c` | FAIL | FAIL |
-| `arrays_and_loops/5.c` | FAIL | FAIL |
-| `general_wp_problems/absolute_value.c` | PASS | PASS |
-| `general_wp_problems/add.c` | PASS | PASS |
-| `general_wp_problems/ani.c` | FAIL | FAIL |
-| `general_wp_problems/diff.c` | PASS | PASS |
-| `general_wp_problems/gcd.c` | PASS | PASS |
-| `general_wp_problems/max_of_2.c` | PASS | PASS |
-| `general_wp_problems/power.c` | FAIL | FAIL |
-| `general_wp_problems/simple_interest.c` | PASS | PASS |
-| `general_wp_problems/swap.c` | PASS | PASS |
-| `general_wp_problems/triangle_angles.c` | FAIL | FAIL |
-| `general_wp_problems/triangle_sides.c` | PASS | PASS |
-| `general_wp_problems/wp1.c` | FAIL | FAIL |
-| `immutable_arrays/array_sum.c` | FAIL | FAIL |
-| `immutable_arrays/binary_search.c` | FAIL | FAIL |
-| `immutable_arrays/check_evens_in_array.c` | PASS | PASS |
-| `immutable_arrays/max.c` | FAIL | PASS |
-| `immutable_arrays/occurences_of_x.c` | FAIL | FAIL |
-| `immutable_arrays/sample.c` | FAIL | FAIL |
-| `immutable_arrays/search.c` | PASS | PASS |
-| `immutable_arrays/search_2.c` | PASS | PASS |
-| `loops/1.c` | FAIL | FAIL |
-| `loops/2.c` | FAIL | FAIL |
-| `loops/3.c` | PASS | FAIL |
-| `loops/4.c` | FAIL | PASS |
-| `loops/fact.c` | FAIL | FAIL |
-| `loops/mult.c` | FAIL | FAIL |
-| `loops/sum_digits.c` | FAIL | FAIL |
-| `loops/sum_even.c` | FAIL | FAIL |
-| `miscellaneous/array_find.c` | PASS | PASS |
-| `miscellaneous/array_max_advanced.c` | FAIL | FAIL |
-| `miscellaneous/array_swap.c` | PASS | PASS |
-| `miscellaneous/increment_arr.c` | FAIL | FAIL |
-| `miscellaneous/max_of_2.c` | PASS | PASS |
-| `more_arrays/equal_arrays.c` | FAIL | PASS |
-| `more_arrays/replace_evens.c` | FAIL | FAIL |
-| `more_arrays/reverse_array.c` | FAIL | FAIL |
-| `mutable_arrays/array_double.c` | FAIL | FAIL |
-| `mutable_arrays/bubble_sort.c` | FAIL | FAIL |
-| `pointers/add_pointers.c` | FAIL | FAIL |
-| `pointers/add_pointers_3_vars.c` | FAIL | FAIL |
-| `pointers/div_rem.c` | PASS | PASS |
-| `pointers/incr_a_by_b.c` | FAIL | PASS |
-| `pointers/max_pointers.c` | PASS | PASS |
-| `pointers/order_3.c` | FAIL | FAIL |
-| `pointers/reset_1st.c` | PASS | PASS |
-| `pointers/swap.c` | PASS | PASS |
-
-</details>
-
 ## Understanding Verification Results
 
 ### VALID ✓
@@ -322,20 +337,4 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 # Run a specific category
 ./scripts/run_frama_c_problems.sh loops
 ./scripts/run_frama_c_problems.sh arrays_and_loops -v
-```
-
-### "Output directory not found" (verify scripts)
-
-If you see `Output directory not found: outputs/...`, it’s almost always one of:
-- **Wrong folder name** (e.g., missing an underscore like `annotated_correction_6`).
-- **Wrong working directory**: relative paths are resolved from where you run the script.
-
-Example:
-
-```bash
-# From repo root (inside Docker):
-PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated_correction_6
-
-# From ./scripts:
-PYTHONPATH=/workspace python3 verify_all_outputs.py --output-dir ../outputs/annotated_correction_6
 ```
