@@ -7,7 +7,7 @@ Automated Specification Generation for C Programs using LLMs and Frama-C verific
 AutoSpec is a tool that automatically generates and verifies ACSL (ANSI/ISO C Specification Language) specifications for C programs. It combines:
 
 - **Static Analysis**: Decompose C programs into verifiable components
-- **LLM-based Generation**: Generate specifications using language models (placeholder for local models)
+- **LLM-based Generation**: Generate ACSL contracts / loop annotations via an LLM
 - **Formal Verification**: Verify specifications using Frama-C's WP (Weakest Precondition) plugin
 - **Iterative Refinement**: Strengthen or weaken specifications based on verification feedback
 
@@ -29,6 +29,9 @@ docker run -dit --name autospec --gpus all --network host -v $(pwd):/workspace a
 docker exec -it autospec /bin/bash
 ```
 
+> [!NOTE]
+> - The README assumes the repo is mounted at `/workspace` inside the container.
+
 3. **Verify the installation:**
 
 ```bash
@@ -44,15 +47,25 @@ This will run verification on benchmarks in `benchmarks/frama-c-problems/ground-
 ```bash
 # Run all benchmark categories
 ./scripts/run_frama_c_problems.sh
+```
 
-docker exec -it autospec /bin/bash
+> [!NOTE]
+> If you are not already inside the container shell, enter it first:
+>
+> ```bash
+> docker exec -it autospec /bin/bash
+> ```
+> [!TIP]
+> If `frama-c` is not found inside the container, run:
+>
+> ```bash
+> opam init
+> eval $(opam env)
+> ```
 
+Verify a single file (ground truth or your own C file):
 
-
-opam init
-eval $(opam env)
-
-
+```bash
 python3 -m autospec.cli.main verify benchmarks/frama-c-problems/ground-truth/loops/1.c --verbose
 ```
 
@@ -96,12 +109,12 @@ See [benchmarks/README.md](benchmarks/README.md) for detailed documentation.
 
 ### Adding New C Programs
 
-1. Create a C file in `benchmarks/frama_c_problems/`
-2. Add ACSL annotations (preconditions, postconditions, loop invariants)
+1. Create a C file under `benchmarks/frama-c-problems/` (or anywhere you like).
+2. Add ACSL annotations (preconditions, postconditions, loop invariants).
 3. Verify with AutoSpec:
 
 ```bash
-python3 -m autospec.cli.main verify benchmarks/frama_c_problems/your_file.c
+python3 -m autospec.cli.main verify benchmarks/frama-c-problems/your_file.c
 ```
 
 ### Example ACSL Annotation
@@ -135,6 +148,121 @@ export FRAMA_C_WP_TIMEOUT=20
 export VERBOSE=true
 ```
 
+## Automated Spec Generation with vLLM
+
+This is the core end-to-end workflow: **LLM → insert ACSL → verify**.
+
+### 1) Start an OpenAI-compatible vLLM server
+
+In a terminal **inside Docker** (or on the host if you prefer), start the model server:
+
+```bash
+python3 -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen3-32B \
+  --port 8000 \
+  --dtype auto
+```
+
+> [!NOTE]
+> - `scripts/gen_specs.py` talks to an OpenAI-compatible Chat Completions endpoint.
+
+### 2) Run generation (and verify)
+
+In a second terminal **inside Docker**:
+
+```bash
+PYTHONPATH=/workspace python3 scripts/gen_specs.py \
+  --input-dir benchmarks/frama-c-problems/test-inputs \
+  --output-dir outputs/annotated \
+  --model Qwen/Qwen3-32B \
+  --endpoint http://localhost:8000/v1/chat/completions \
+  --verify
+```
+
+Key details:
+- The script recursively processes all `.c` files under `--input-dir`.
+- It annotates one function/loop at a time by inserting a returned `/*@ ... */` block immediately before the target node.
+- With `--verify`, it calls the AutoSpec verifier on each produced file.
+- If verification fails, it automatically enters a **final feedback correction loop** (up to 3 attempts) where Frama-C/WP output is fed back to the LLM to repair **ACSL only**.
+
+
+## Results
+
+Below is a side-by-side comparison on **`benchmarks/frama-c-problems/test-inputs` (51 programs)**:
+
+| Metric | AutoSpec (initial) | AutoSpec + final feedback loop |
+|---|---:|---:|
+| Programs passed | 21 | 24 |
+| Programs failed | 30 | 27 |
+| Pass rate | 41.2% | 47.1% |
+| Visual | <progress value="21" max="51"></progress> | <progress value="24" max="51"></progress> |
+
+**What is the “final feedback loop”?** After a failed verification run, we feed the Frama-C/WP error output back into the LLM and ask it to **repair ACSL only** (no C code changes), then re-verify.
+
+> [!NOTE]
+> If you want a complete per-program listing, run `scripts/verify_all_outputs.py` and save the output (e.g., `... > results.txt`).
+
+### Per-program comparison (51 programs)
+
+<details>
+<summary>Click to expand</summary>
+
+| Program | AutoSpec | + Final feedback |
+|---|:---:|:---:|
+| `arrays_and_loops/1.c` | PASS | FAIL |
+| `arrays_and_loops/2.c` | FAIL | PASS |
+| `arrays_and_loops/3.c` | PASS | PASS |
+| `arrays_and_loops/4.c` | FAIL | FAIL |
+| `arrays_and_loops/5.c` | FAIL | FAIL |
+| `general_wp_problems/absolute_value.c` | PASS | PASS |
+| `general_wp_problems/add.c` | PASS | PASS |
+| `general_wp_problems/ani.c` | FAIL | FAIL |
+| `general_wp_problems/diff.c` | PASS | PASS |
+| `general_wp_problems/gcd.c` | PASS | PASS |
+| `general_wp_problems/max_of_2.c` | PASS | PASS |
+| `general_wp_problems/power.c` | FAIL | FAIL |
+| `general_wp_problems/simple_interest.c` | PASS | PASS |
+| `general_wp_problems/swap.c` | PASS | PASS |
+| `general_wp_problems/triangle_angles.c` | FAIL | FAIL |
+| `general_wp_problems/triangle_sides.c` | PASS | PASS |
+| `general_wp_problems/wp1.c` | FAIL | FAIL |
+| `immutable_arrays/array_sum.c` | FAIL | FAIL |
+| `immutable_arrays/binary_search.c` | FAIL | FAIL |
+| `immutable_arrays/check_evens_in_array.c` | PASS | PASS |
+| `immutable_arrays/max.c` | FAIL | PASS |
+| `immutable_arrays/occurences_of_x.c` | FAIL | FAIL |
+| `immutable_arrays/sample.c` | FAIL | FAIL |
+| `immutable_arrays/search.c` | PASS | PASS |
+| `immutable_arrays/search_2.c` | PASS | PASS |
+| `loops/1.c` | FAIL | FAIL |
+| `loops/2.c` | FAIL | FAIL |
+| `loops/3.c` | PASS | FAIL |
+| `loops/4.c` | FAIL | PASS |
+| `loops/fact.c` | FAIL | FAIL |
+| `loops/mult.c` | FAIL | FAIL |
+| `loops/sum_digits.c` | FAIL | FAIL |
+| `loops/sum_even.c` | FAIL | FAIL |
+| `miscellaneous/array_find.c` | PASS | PASS |
+| `miscellaneous/array_max_advanced.c` | FAIL | FAIL |
+| `miscellaneous/array_swap.c` | PASS | PASS |
+| `miscellaneous/increment_arr.c` | FAIL | FAIL |
+| `miscellaneous/max_of_2.c` | PASS | PASS |
+| `more_arrays/equal_arrays.c` | FAIL | PASS |
+| `more_arrays/replace_evens.c` | FAIL | FAIL |
+| `more_arrays/reverse_array.c` | FAIL | FAIL |
+| `mutable_arrays/array_double.c` | FAIL | FAIL |
+| `mutable_arrays/bubble_sort.c` | FAIL | FAIL |
+| `pointers/add_pointers.c` | FAIL | FAIL |
+| `pointers/add_pointers_3_vars.c` | FAIL | FAIL |
+| `pointers/div_rem.c` | PASS | PASS |
+| `pointers/incr_a_by_b.c` | FAIL | PASS |
+| `pointers/max_pointers.c` | PASS | PASS |
+| `pointers/order_3.c` | FAIL | FAIL |
+| `pointers/reset_1st.c` | PASS | PASS |
+| `pointers/swap.c` | PASS | PASS |
+
+</details>
+
 ## Understanding Verification Results
 
 ### VALID ✓
@@ -153,14 +281,22 @@ Prover couldn't determine validity. May need stronger loop invariants or differe
 
 ### "Frama-C not found"
 
-**Docker:** Rebuild the image:
+**Docker:** rebuild the image (use `--no-cache` if needed):
+
 ```bash
 docker build --no-cache -t autospec:dev .
-
-
 ```
 
-**Local:** Ensure Frama-C is in PATH:
+Then, inside the container shell, initialize opam and load the environment:
+
+```bash
+opam init
+eval $(opam env)
+which frama-c
+```
+
+**Local:** ensure Frama-C is in PATH:
+
 ```bash
 eval $(opam env)
 which frama-c
@@ -188,117 +324,18 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 ./scripts/run_frama_c_problems.sh arrays_and_loops -v
 ```
 
-## Automated Spec Generation with vLLM
+### "Output directory not found" (verify scripts)
+
+If you see `Output directory not found: outputs/...`, it’s almost always one of:
+- **Wrong folder name** (e.g., missing an underscore like `annotated_correction_6`).
+- **Wrong working directory**: relative paths are resolved from where you run the script.
+
+Example:
 
 ```bash
-# (Terminal 1 inside docker)
-python3 -m vllm.entrypoints.openai.api_server \
-  --model Qwen/Qwen3-32B \
-  --port 8000 --dtype auto 
-```
+# From repo root (inside Docker):
+PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated_correction_6
 
-```bash
-source .venv/bin/activate
-
-
-PYTHONPATH=/workspace python3 scripts/gen_specs.py \
-
-
-# (Terminal 2 inside docker)
-python3 scripts/gen_specs.py \
-  --input-dir benchmarks/frama-c-problems/test-inputs \
-  --output-dir outputs/annotated \
-  --model Qwen/Qwen3-32B \
-  --endpoint http://localhost:8000/v1/chat/completions \
-  --verify      
-```
-
-Key details:
-- The script recursively processes all `.c` files under `--input-dir` (default: `benchmarks/frama-c-problems/test-inputs`).
-- For each function/loop (CURRENT NODE), it:
-  1. Wraps the node with CURRENT NODE markers.
-  2. Sends the full file + markers + accumulated specs to the LLM using the README few-shot prompt.
-  3. Inserts the returned ACSL block immediately before the target node.
-  4. Repeats until all nodes have specs, writes to `--output-dir` (default: `outputs/annotated`).
-- `--verify` runs `python3 -m autospec.cli.main verify <annotated-file> --verbose --timeout 120`.
-- Configure endpoint/auth via:
-  - `--endpoint` (default: `http://localhost:8000/v1/chat/completions`)
-  - `--model` (default: `Qwen/Qwen3-32B`)
-  - `OPENAI_API_KEY` (optional; sent as Bearer)
-
-## Configuration
-
-Edit `autospec/config.py` to customize:
-
-- `FRAMA_C_COMMAND`: Path to Frama-C executable
-- `FRAMA_C_TIMEOUT`: Overall verification timeout (default: 60s)
-- `FRAMA_C_WP_TIMEOUT`: Per-proof timeout (default: 10s)
-- `LOG_LEVEL`: Logging verbosity
-
-
-## Troubleshooting
-
-### "Frama-C not found"
-
-```bash
-eval $(opam env) # Run this manually inside the docker
-```
-
-
-original result:
-```
-Program Success
-arrays_and_loops/1.c    PASS
-arrays_and_loops/2.c    FAIL
-arrays_and_loops/3.c    PASS
-arrays_and_loops/4.c    FAIL
-arrays_and_loops/5.c    FAIL
-general_wp_problems/absolute_value.c    PASS
-general_wp_problems/add.c       PASS
-general_wp_problems/ani.c       FAIL
-general_wp_problems/diff.c      PASS
-general_wp_problems/gcd.c       PASS
-general_wp_problems/max_of_2.c  PASS
-general_wp_problems/power.c     FAIL
-general_wp_problems/simple_interest.c   PASS
-general_wp_problems/swap.c      PASS
-general_wp_problems/triangle_angles.c   FAIL
-general_wp_problems/triangle_sides.c    PASS
-general_wp_problems/wp1.c       FAIL
-immutable_arrays/array_sum.c    FAIL
-immutable_arrays/binary_search.c        FAIL
-immutable_arrays/check_evens_in_array.c PASS
-immutable_arrays/max.c  FAIL
-immutable_arrays/occurences_of_x.c      FAIL
-immutable_arrays/sample.c       FAIL
-immutable_arrays/search.c       PASS
-immutable_arrays/search_2.c     PASS
-loops/1.c       FAIL
-loops/2.c       FAIL
-loops/3.c       PASS
-loops/4.c       FAIL
-loops/fact.c    FAIL
-loops/mult.c    FAIL
-loops/sum_digits.c      FAIL
-loops/sum_even.c        FAIL
-miscellaneous/array_find.c      PASS
-miscellaneous/array_max_advanced.c      FAIL
-miscellaneous/array_swap.c      PASS
-miscellaneous/increment_arr.c   FAIL
-miscellaneous/max_of_2.c        PASS
-more_arrays/equal_arrays.c      FAIL
-more_arrays/replace_evens.c     FAIL
-more_arrays/reverse_array.c     FAIL
-mutable_arrays/array_double.c   FAIL
-mutable_arrays/bubble_sort.c    FAIL
-pointers/add_pointers.c FAIL
-pointers/add_pointers_3_vars.c  FAIL
-pointers/div_rem.c      PASS
-pointers/incr_a_by_b.c  FAIL
-pointers/max_pointers.c PASS
-pointers/order_3.c      FAIL
-pointers/reset_1st.c    PASS
-pointers/swap.c PASS
-
-Summary: 21/51 passed
+# From ./scripts:
+PYTHONPATH=/workspace python3 verify_all_outputs.py --output-dir ../outputs/annotated_correction_6
 ```
