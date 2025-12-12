@@ -38,9 +38,13 @@ COPY requirements.txt /workspace/requirements.txt
 # Install Python dependencies
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Install clang Python bindings for example.py
+# Install clang Python bindings for decomposition.py
 # Use libclang-py3 which is more compatible with newer libclang versions
 RUN pip3 install --no-cache-dir --break-system-packages libclang-py3
+
+# Install vllm for LLM inference server
+# vllm will automatically install PyTorch with CUDA support
+RUN pip3 install --no-cache-dir --break-system-packages vllm
 
 # Set up environment variables for libclang
 ENV LLVM_CONFIG=/usr/bin/llvm-config-18
@@ -52,9 +56,22 @@ ENV LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu/libclang-18.so.18
 ENV PATH="/home/opam/.opam/default/bin:${PATH}"
 ENV OPAM_SWITCH_PREFIX="/home/opam/.opam/default"
 
+# Set PYTHONPATH so Python can find the autospec package
+ENV PYTHONPATH=/workspace
+
 # Verify Frama-C is available
 RUN eval $(opam env) && frama-c -version
 
 # Verify libclang is available for example.py
 RUN python3 -c "import clang.cindex; print('libclang found:', clang.cindex.Config.library_path or 'default')" || \
     (echo "Warning: libclang not found, but continuing..." && true)
+
+# Verify vllm is available (optional - may fail if CUDA not available at build time)
+RUN python3 -c "import vllm; print('vllm version:', vllm.__version__)" || \
+    (echo "Warning: vllm import failed (may need CUDA at runtime)" && true)
+
+# Copy the autospec package (needs to be after setting PYTHONPATH)
+# This will be done when the workspace is mounted/copied, but verify it can be imported
+# Note: This will fail if autospec isn't copied yet, which is expected during build
+RUN python3 -c "import sys; sys.path.insert(0, '/workspace'); import autospec; print('autospec module found')" || \
+    (echo "Note: autospec module will be available when workspace is mounted" && true)

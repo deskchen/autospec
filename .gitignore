@@ -54,3 +54,6 @@ dmypy.json
 tmp/
 temp/
 
+# Outputs
+outputs/
+

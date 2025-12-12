@@ -12,6 +12,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BENCHMARKS_DIR="$PROJECT_ROOT/benchmarks/frama-c-problems/ground-truth"
+# BENCHMARKS_DIR="$PROJECT_ROOT/outputs/annotated"
 
 # Color codes for output
 GREEN='\033[0;32m'
