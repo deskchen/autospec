@@ -65,7 +65,7 @@ python3 -m vllm.entrypoints.openai.api_server \
 In a second terminal **inside Docker**:
 
 ```bash
-PYTHONPATH=/workspace python3 scripts/gen_specs.py \
+python3 scripts/gen_specs.py \
   --input-dir benchmarks/frama-c-problems/test-inputs \
   --output-dir outputs/annotated \
   --model Qwen/Qwen3-32B \
@@ -84,17 +84,8 @@ Key details:
 After generation, you can verify (or re-verify) everything under an output directory:
 
 ```bash
-# From repo root (inside Docker)
-PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated
-
-# Example: verify a different outputs folder
-PYTHONPATH=/workspace python3 scripts/verify_all_outputs.py --output-dir outputs/annotated_correction_6
+./scripts/run_frama_c_problems.sh -d outputs/annotated #(add -v to get verbose outputs)
 ```
-
-> [!WARNING]
-> If you see `Output directory not found: outputs/...`, double-check:
-> - the **folder name** (e.g., `annotated_correction_6` has an underscore), and
-> - your **current working directory** (relative paths are resolved from where you run the script).
 
 ## Results
 
@@ -276,65 +267,4 @@ Or use environment variables:
 export FRAMA_C_TIMEOUT=120
 export FRAMA_C_WP_TIMEOUT=20
 export VERBOSE=true
-```
-
-## Understanding Verification Results
-
-### VALID ✓
-All proof obligations were successfully verified. The specifications are correct.
-
-### INVALID ✗
-Some proof obligations failed. The code may have bugs or specifications may be too strong.
-
-### TIMEOUT ⏱
-Verification took too long. Try increasing timeout or simplifying specifications.
-
-### UNKNOWN ❓
-Prover couldn't determine validity. May need stronger loop invariants or different proof strategy.
-
-## Troubleshooting
-
-### "Frama-C not found"
-
-**Docker:** rebuild the image (use `--no-cache` if needed):
-
-```bash
-docker build --no-cache -t autospec:dev .
-```
-
-Then, inside the container shell, initialize opam and load the environment:
-
-```bash
-opam init
-eval $(opam env)
-which frama-c
-```
-
-**Local:** ensure Frama-C is in PATH:
-
-```bash
-eval $(opam env)
-which frama-c
-```
-
-### Verification Times Out
-
-Increase timeout:
-```bash
-python3 -m autospec.cli.main verify file.c --timeout 300
-```
-
-### Import Errors
-
-**Docker:** Make sure to mount the current directory:
-```bash
-docker run -v $(pwd):/workspace autospec:dev ...
-```
-
-**Local:** Run from project root and ensure Python can find the package:
-```bash
-export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-# Run a specific category
-./scripts/run_frama_c_problems.sh loops
-./scripts/run_frama_c_problems.sh arrays_and_loops -v
 ```

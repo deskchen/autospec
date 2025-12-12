@@ -11,8 +11,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-BENCHMARKS_DIR="$PROJECT_ROOT/benchmarks/frama-c-problems/ground-truth"
-# BENCHMARKS_DIR="$PROJECT_ROOT/outputs/annotated"
+# Default benchmarks directory (can be overridden with -d/--dir)
+DEFAULT_BENCHMARKS_DIR="$PROJECT_ROOT/benchmarks/frama-c-problems/ground-truth"
 
 # Color codes for output
 GREEN='\033[0;32m'
@@ -53,24 +53,32 @@ usage() {
     done
     echo ""
     echo "Options:"
+    echo "  -d, --dir DIR   Benchmarks directory (default: benchmarks/frama-c-problems/ground-truth)"
     echo "  -v, --verbose   Show detailed Frama-C output"
     echo "  -h, --help      Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                          # Test all categories"
+    echo "  $0                          # Test all categories (default directory)"
     echo "  $0 loops                    # Test only loops category"
     echo "  $0 arrays_and_loops -v      # Test arrays_and_loops with verbose output"
+    echo "  $0 -d outputs/annotated     # Test files in outputs/annotated directory"
+    echo "  $0 loops -d outputs/annotated -v  # Test loops category in outputs/annotated with verbose"
 }
 
 # Parse arguments
 CATEGORY=""
 VERBOSE=""
+BENCHMARKS_DIR="$DEFAULT_BENCHMARKS_DIR"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
             usage
             exit 0
+            ;;
+        -d|--dir)
+            BENCHMARKS_DIR="$2"
+            shift 2
             ;;
         -v|--verbose)
             VERBOSE="--verbose"
@@ -82,6 +90,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Resolve relative paths to absolute
+if [[ ! "$BENCHMARKS_DIR" =~ ^/ ]]; then
+    BENCHMARKS_DIR="$PROJECT_ROOT/$BENCHMARKS_DIR"
+fi
 
 # Function to verify a single file
 verify_file() {
