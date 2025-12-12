@@ -96,7 +96,6 @@ Below is a side-by-side comparison on **`benchmarks/frama-c-problems/test-inputs
 | Programs passed | 21 | 24 |
 | Programs failed | 30 | 27 |
 | Pass rate | 41.2% | 47.1% |
-| Visual | <progress value="21" max="51"></progress> | <progress value="24" max="51"></progress> |
 
 **What is the “final feedback loop”?** After a failed verification run, we feed the Frama-C/WP error output back into the LLM and ask it to **repair ACSL only** (no C code changes), then re-verify.
 
@@ -176,7 +175,7 @@ Below is a side-by-side comparison on **`benchmarks/frama-c-problems/test-inputs
 > ```bash
 > docker exec -it autospec /bin/bash
 > ```
-> [!TIP]
+> 
 > If `frama-c` is not found inside the container, run:
 >
 > ```bash
